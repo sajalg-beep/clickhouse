@@ -1,0 +1,90 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: clickhouse-backup-config
+  namespace: clickhouse
+  labels:
+    app: clickhouse-backup
+data:
+  config.yml: |
+    general:
+      remote_storage: gcs
+      disable_progress_bar: true
+      backups_to_keep_local: 3
+      backups_to_keep_remote: 30
+
+    clickhouse:
+      username: admin
+      password: changeme
+      host: clickhouse-cluster
+      port: 9000
+      data_path: /var/lib/clickhouse
+      skip_tables:
+        - system.*
+        - INFORMATION_SCHEMA.*
+        - information_schema.*
+
+    gcs:
+      bucket: YOUR_BACKUP_BUCKET_NAME  # Change this
+      path: clickhouse-backups
+      credentials_file: ""  # Use Workload Identity
+      compression_level: 1
+      compression_format: gzip
+
+    api:
+      listen: 0.0.0.0:7171
+      enable_metrics: true
+      enable_pprof: false
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: clickhouse-backup-scripts
+  namespace: clickhouse
+  labels:
+    app: clickhouse-backup
+data:
+  backup.sh: |
+    #!/bin/bash
+    set -e
+
+    BACKUP_NAME="backup-$(date +%Y%m%d-%H%M%S)"
+
+    echo "Starting backup: $BACKUP_NAME"
+
+    # Create backup using clickhouse-backup tool
+    clickhouse-backup create "$BACKUP_NAME"
+
+    # Upload to GCS
+    clickhouse-backup upload "$BACKUP_NAME"
+
+    echo "Backup completed: $BACKUP_NAME"
+
+    # Clean old local backups (keep last 3)
+    clickhouse-backup list local | tail -n +4 | xargs -I {} clickhouse-backup delete local {} || true
+
+    echo "Backup cleanup completed"
+
+  restore.sh: |
+    #!/bin/bash
+    set -e
+
+    if [ -z "$1" ]; then
+      echo "Usage: $0 <backup-name>"
+      echo "Available backups:"
+      clickhouse-backup list remote
+      exit 1
+    fi
+
+    BACKUP_NAME="$1"
+
+    echo "Restoring backup: $BACKUP_NAME"
+
+    # Download from GCS
+    clickhouse-backup download "$BACKUP_NAME"
+
+    # Restore
+    clickhouse-backup restore "$BACKUP_NAME"
+
+    echo "Restore completed: $BACKUP_NAME"

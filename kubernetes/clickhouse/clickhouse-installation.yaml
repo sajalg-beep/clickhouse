@@ -1,0 +1,159 @@
+---
+apiVersion: clickhouse.altinity.com/v1
+kind: ClickHouseInstallation
+metadata:
+  name: clickhouse-cluster
+  namespace: clickhouse
+  labels:
+    app: clickhouse
+    managed-by: kubectl
+spec:
+  defaults:
+    templates:
+      dataVolumeClaimTemplate: data-volume
+      logVolumeClaimTemplate: log-volume
+      serviceTemplate: chi-service
+      podTemplate: clickhouse-pod
+
+  configuration:
+    users:
+      admin/password: "changeme"
+      admin/networks/ip:
+        - "::/0"
+      admin/profile: "default"
+      admin/quota: "default"
+
+    profiles:
+      default:
+        max_memory_usage: 10000000000
+        use_uncompressed_cache: 0
+        load_balancing: "random"
+        log_queries: 1
+        log_query_threads: 1
+        max_execution_time: 600
+
+    quotas:
+      default:
+        interval:
+          duration: 3600
+          queries: 0
+          errors: 0
+          result_rows: 0
+          read_rows: 0
+          execution_time: 0
+
+    zookeeper:
+      nodes:
+        - host: zookeeper-0.zookeeper-headless.clickhouse.svc.cluster.local
+          port: 2181
+        - host: zookeeper-1.zookeeper-headless.clickhouse.svc.cluster.local
+          port: 2181
+        - host: zookeeper-2.zookeeper-headless.clickhouse.svc.cluster.local
+          port: 2181
+
+    clusters:
+      - name: clickhouse-cluster
+        layout:
+          shardsCount: 2
+          replicasCount: 3
+
+  templates:
+    podTemplates:
+      - name: clickhouse-pod
+        spec:
+          serviceAccountName: clickhouse-sa
+
+          affinity:
+            podAntiAffinity:
+              preferredDuringSchedulingIgnoredDuringExecution:
+                - weight: 100
+                  podAffinityTerm:
+                    labelSelector:
+                      matchExpressions:
+                        - key: clickhouse.altinity.com/app
+                          operator: In
+                          values:
+                            - chop
+                    topologyKey: kubernetes.io/hostname
+
+          containers:
+            - name: clickhouse
+              image: clickhouse/clickhouse-server:23.8
+              ports:
+                - name: http
+                  containerPort: 8123
+                - name: tcp
+                  containerPort: 9000
+                - name: interserver
+                  containerPort: 9009
+
+              resources:
+                requests:
+                  cpu: "2"
+                  memory: "8Gi"
+                limits:
+                  cpu: "2"
+                  memory: "8Gi"
+
+              livenessProbe:
+                httpGet:
+                  path: /ping
+                  port: 8123
+                initialDelaySeconds: 60
+                periodSeconds: 10
+                timeoutSeconds: 5
+                failureThreshold: 3
+
+              readinessProbe:
+                httpGet:
+                  path: /ping
+                  port: 8123
+                initialDelaySeconds: 30
+                periodSeconds: 5
+                timeoutSeconds: 3
+                failureThreshold: 3
+
+              volumeMounts:
+                - name: data-volume
+                  mountPath: /var/lib/clickhouse
+                - name: log-volume
+                  mountPath: /var/log/clickhouse-server
+                - name: clickhouse-config
+                  mountPath: /etc/clickhouse-server/config.d/custom.xml
+                  subPath: custom.xml
+
+          volumes:
+            - name: clickhouse-config
+              configMap:
+                name: clickhouse-custom-config
+
+    volumeClaimTemplates:
+      - name: data-volume
+        spec:
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 100Gi
+          storageClassName: clickhouse-ssd
+
+      - name: log-volume
+        spec:
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 10Gi
+          storageClassName: clickhouse-ssd
+
+    serviceTemplates:
+      - name: chi-service
+        spec:
+          ports:
+            - name: http
+              port: 8123
+              targetPort: 8123
+            - name: tcp
+              port: 9000
+              targetPort: 9000
+          type: ClusterIP

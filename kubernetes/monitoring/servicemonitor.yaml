@@ -1,0 +1,52 @@
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: clickhouse-metrics
+  namespace: clickhouse
+  labels:
+    app: clickhouse
+    release: prometheus  # Must match Prometheus operator release name
+spec:
+  selector:
+    matchLabels:
+      clickhouse.altinity.com/app: chop
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: zookeeper-metrics
+  namespace: clickhouse
+  labels:
+    app: zookeeper
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app: zookeeper
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 30s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: clickhouse-backup-metrics
+  namespace: clickhouse
+  labels:
+    app: clickhouse-backup
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app: clickhouse-backup-api
+  endpoints:
+    - port: api
+      path: /metrics
+      interval: 30s

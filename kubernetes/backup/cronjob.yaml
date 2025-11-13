@@ -1,0 +1,68 @@
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: clickhouse-backup
+  namespace: clickhouse
+  labels:
+    app: clickhouse-backup
+spec:
+  schedule: "0 2 * * *"  # Daily at 2 AM UTC
+  timezone: "UTC"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    metadata:
+      labels:
+        app: clickhouse-backup
+    spec:
+      template:
+        metadata:
+          labels:
+            app: clickhouse-backup
+        spec:
+          serviceAccountName: clickhouse-backup-sa
+          restartPolicy: OnFailure
+
+          containers:
+            - name: backup
+              image: altinity/clickhouse-backup:2.4.34
+              command: ["/bin/sh", "-c"]
+              args: ["/scripts/backup.sh"]
+
+              env:
+                - name: LOG_LEVEL
+                  value: "info"
+                - name: CLICKHOUSE_HOST
+                  value: "clickhouse-cluster"
+                - name: CLICKHOUSE_PORT
+                  value: "9000"
+                - name: CLICKHOUSE_USERNAME
+                  value: "admin"
+                - name: CLICKHOUSE_PASSWORD
+                  value: "changeme"
+
+              volumeMounts:
+                - name: backup-scripts
+                  mountPath: /scripts
+                - name: backup-config
+                  mountPath: /etc/clickhouse-backup
+
+              resources:
+                requests:
+                  cpu: 500m
+                  memory: 1Gi
+                limits:
+                  cpu: 2000m
+                  memory: 4Gi
+
+          volumes:
+            - name: backup-scripts
+              configMap:
+                name: clickhouse-backup-scripts
+                defaultMode: 0755
+
+            - name: backup-config
+              configMap:
+                name: clickhouse-backup-config

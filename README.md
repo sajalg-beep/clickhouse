@@ -1,6 +1,15 @@
 # Enterprise-Grade ClickHouse Cluster on GKE
 
-This repository contains Terraform code to deploy a production-ready, enterprise-grade ClickHouse cluster on Google Kubernetes Engine (GKE) with the following features:
+This repository contains complete infrastructure code to deploy a production-ready, enterprise-grade ClickHouse cluster on Google Kubernetes Engine (GKE).
+
+## Deployment Options
+
+Choose your preferred deployment method:
+
+1. **[Terraform](terraform/)** - Infrastructure as Code with automated GKE cluster provisioning
+2. **[Kubernetes YAML](kubernetes/)** - Direct Kubernetes manifest deployment (requires existing GKE cluster)
+
+Both methods deploy the same enterprise-grade ClickHouse cluster with identical features.
 
 ## Features
 
@@ -54,94 +63,89 @@ This repository contains Terraform code to deploy a production-ready, enterprise
               └──────────────────┘
 ```
 
-## Prerequisites
-
-1. **Google Cloud SDK** installed and configured
-   ```bash
-   gcloud auth login
-   gcloud config set project YOUR_PROJECT_ID
-   ```
-
-2. **Terraform** >= 1.5.0
-   ```bash
-   terraform version
-   ```
-
-3. **kubectl** installed
-   ```bash
-   kubectl version --client
-   ```
-
-4. **Enabled GCP APIs**:
-   ```bash
-   gcloud services enable container.googleapis.com
-   gcloud services enable compute.googleapis.com
-   gcloud services enable storage-api.googleapis.com
-   gcloud services enable cloudresourcemanager.googleapis.com
-   gcloud services enable iam.googleapis.com
-   ```
-
-5. **GCP Permissions**: Your user account needs the following roles:
-   - `roles/container.admin`
-   - `roles/compute.admin`
-   - `roles/iam.serviceAccountAdmin`
-   - `roles/storage.admin`
-
 ## Quick Start
 
-### 1. Clone and Configure
+### Option 1: Deploy with Terraform (Full Infrastructure)
+
+**Prerequisites:**
+- Google Cloud SDK
+- Terraform >= 1.5.0
+- kubectl
+
+**Steps:**
 
 ```bash
+# 1. Configure Terraform
 cd terraform
 cp terraform.tfvars.example terraform.tfvars
-```
+# Edit terraform.tfvars with your project_id
 
-Edit `terraform.tfvars` with your settings:
-```hcl
-project_id = "your-gcp-project-id"
-region     = "us-central1"
-```
-
-### 2. Initialize Terraform
-
-```bash
+# 2. Deploy
 terraform init
-```
-
-### 3. Review Plan
-
-```bash
-terraform plan
-```
-
-### 4. Deploy Infrastructure
-
-```bash
 terraform apply
-```
 
-This will take approximately 15-20 minutes to complete.
-
-### 5. Configure kubectl
-
-```bash
+# 3. Connect to cluster
 gcloud container clusters get-credentials clickhouse-cluster \
-  --region us-central1 \
-  --project your-gcp-project-id
+  --region us-central1 --project YOUR_PROJECT_ID
+
+# 4. Verify
+kubectl get pods -n clickhouse
 ```
 
-### 6. Verify Deployment
+**Deployment time:** ~15-20 minutes
+
+📖 **[Full Terraform Documentation](terraform/)**
+
+### Option 2: Deploy with Kubernetes YAML (Existing GKE Cluster)
+
+**Prerequisites:**
+- Existing GKE cluster
+- kubectl configured
+- ClickHouse Operator installed
+
+**Steps:**
 
 ```bash
-# Check cluster status
-kubectl get nodes
+# 1. Install ClickHouse Operator
+kubectl apply -f https://raw.githubusercontent.com/Altinity/clickhouse-operator/master/deploy/operator/clickhouse-operator-install-bundle.yaml
 
-# Check ClickHouse pods
+# 2. Configure backup bucket (edit kubernetes/backup/configmap.yaml)
+# Set: gcs.bucket = "your-backup-bucket-name"
+
+# 3. Deploy everything
+kubectl apply -k kubernetes/
+
+# 4. Verify
 kubectl get pods -n clickhouse
-
-# Check services
-kubectl get svc -n clickhouse
 ```
+
+**Deployment time:** ~10 minutes
+
+📖 **[Full Kubernetes YAML Documentation](kubernetes/DEPLOYMENT.md)**
+
+## Prerequisites by Deployment Method
+
+### For Terraform Deployment
+
+1. **Google Cloud SDK** installed and configured
+2. **Terraform** >= 1.5.0
+3. **kubectl** installed
+4. **Enabled GCP APIs**:
+   - container.googleapis.com
+   - compute.googleapis.com
+   - storage-api.googleapis.com
+5. **GCP Permissions**:
+   - roles/container.admin
+   - roles/compute.admin
+   - roles/iam.serviceAccountAdmin
+   - roles/storage.admin
+
+### For Kubernetes YAML Deployment
+
+1. **Existing GKE cluster** (or create one manually)
+2. **kubectl** installed and configured
+3. **ClickHouse Operator** (installation instructions in deployment guide)
+4. **Prometheus Operator** (optional, for monitoring)
 
 ## Accessing ClickHouse
 
@@ -458,21 +462,31 @@ terraform destroy
 
 Ensure you have backups before destroying!
 
-## Module Structure
+## Repository Structure
 
 ```
-terraform/
-├── main.tf                 # Root module
-├── variables.tf            # Input variables
-├── outputs.tf              # Output values
-├── providers.tf            # Provider configuration
-├── terraform.tfvars        # Variable values (gitignored)
-├── modules/
-│   ├── gke/               # GKE cluster module
-│   ├── clickhouse/        # ClickHouse deployment module
-│   ├── backup/            # Backup configuration module
-│   └── monitoring/        # Monitoring stack module
-└── README.md              # This file
+.
+├── terraform/              # Terraform deployment (GKE + ClickHouse)
+│   ├── main.tf            # Root module
+│   ├── variables.tf       # Input variables
+│   ├── outputs.tf         # Output values
+│   ├── providers.tf       # Provider configuration
+│   └── modules/
+│       ├── gke/          # GKE cluster module
+│       ├── clickhouse/   # ClickHouse deployment module
+│       ├── backup/       # Backup configuration module
+│       └── monitoring/   # Monitoring stack module
+│
+├── kubernetes/            # Kubernetes YAML deployment
+│   ├── base/             # Namespaces and storage classes
+│   ├── clickhouse/       # ClickHouse cluster manifests
+│   ├── zookeeper/        # ZooKeeper ensemble manifests
+│   ├── backup/           # Backup CronJob and API
+│   ├── monitoring/       # ServiceMonitor and alerts
+│   ├── kustomization.yaml  # Root kustomization
+│   └── DEPLOYMENT.md     # YAML deployment guide
+│
+└── README.md             # This file
 ```
 
 ## Support and Contributing
@@ -489,7 +503,21 @@ For issues, questions, or contributions:
 
 ## References
 
+### ClickHouse
 - [ClickHouse Documentation](https://clickhouse.com/docs)
 - [ClickHouse Operator](https://github.com/Altinity/clickhouse-operator)
+- [ClickHouse Backup Tool](https://github.com/AlexAkulov/clickhouse-backup)
+
+### Kubernetes & GCP
 - [GKE Documentation](https://cloud.google.com/kubernetes-engine/docs)
+- [Kubernetes Documentation](https://kubernetes.io/docs)
+- [Kustomize](https://kustomize.io/)
+
+### Infrastructure as Code
 - [Terraform GCP Provider](https://registry.terraform.io/providers/hashicorp/google/latest/docs)
+- [Terraform Kubernetes Provider](https://registry.terraform.io/providers/hashicorp/kubernetes/latest/docs)
+- [Helm Provider](https://registry.terraform.io/providers/hashicorp/helm/latest/docs)
+
+### Monitoring
+- [Prometheus Operator](https://github.com/prometheus-operator/prometheus-operator)
+- [kube-prometheus-stack](https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack)

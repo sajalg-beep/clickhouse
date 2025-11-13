@@ -1,0 +1,128 @@
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: clickhouse-alerts
+  namespace: monitoring
+  labels:
+    app: clickhouse
+    prometheus: kube-prometheus
+spec:
+  groups:
+    - name: clickhouse
+      interval: 30s
+      rules:
+        - alert: ClickHouseDown
+          expr: up{job="clickhouse"} == 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "ClickHouse instance is down"
+            description: "ClickHouse instance {{ $labels.pod }} in namespace {{ $labels.namespace }} has been down for more than 5 minutes."
+
+        - alert: ClickHouseHighQueryDuration
+          expr: rate(clickhouse_query_duration_seconds_sum[5m]) / rate(clickhouse_query_duration_seconds_count[5m]) > 10
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "ClickHouse queries are slow"
+            description: "Average query duration on {{ $labels.pod }} is {{ $value }} seconds."
+
+        - alert: ClickHouseTooManyConnections
+          expr: clickhouse_metric_TCPConnection > 1000
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Too many TCP connections"
+            description: "ClickHouse instance {{ $labels.pod }} has {{ $value }} TCP connections."
+
+        - alert: ClickHouseDiskSpaceHigh
+          expr: (clickhouse_metric_DiskDataBytes / clickhouse_metric_DiskAvailableBytes) > 0.8
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "ClickHouse disk space usage is high"
+            description: "Disk usage on {{ $labels.pod }} is above 80%."
+
+        - alert: ClickHouseReplicationLag
+          expr: clickhouse_metric_ReplicatedPartChecksFailed > 0
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "ClickHouse replication issues"
+            description: "Replication checks are failing on {{ $labels.pod }}."
+
+        - alert: ClickHouseZooKeeperDown
+          expr: clickhouse_metric_ZooKeeperSession == 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "ClickHouse lost ZooKeeper connection"
+            description: "ClickHouse instance {{ $labels.pod }} has no ZooKeeper session."
+
+        - alert: ClickHouseQueryErrors
+          expr: rate(clickhouse_query_failed_total[5m]) > 10
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "High rate of query failures"
+            description: "ClickHouse instance {{ $labels.pod }} is experiencing {{ $value }} query failures per second."
+
+        - alert: ClickHouseInsertErrors
+          expr: rate(clickhouse_insert_failed_total[5m]) > 5
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "High rate of insert failures"
+            description: "ClickHouse instance {{ $labels.pod }} is experiencing {{ $value }} insert failures per second."
+
+    - name: zookeeper
+      interval: 30s
+      rules:
+        - alert: ZooKeeperDown
+          expr: up{job="zookeeper"} == 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "ZooKeeper instance is down"
+            description: "ZooKeeper instance {{ $labels.pod }} has been down for more than 5 minutes."
+
+        - alert: ZooKeeperQuorumLost
+          expr: sum(up{job="zookeeper"}) < 2
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "ZooKeeper quorum lost"
+            description: "Less than 2 ZooKeeper nodes are available. Quorum is lost."
+
+    - name: clickhouse-backup
+      interval: 30s
+      rules:
+        - alert: ClickHouseBackupFailed
+          expr: |
+            time() - clickhouse_backup_last_success_timestamp_seconds > 86400 * 2
+          for: 1h
+          labels:
+            severity: warning
+          annotations:
+            summary: "ClickHouse backup has not succeeded recently"
+            description: "The last successful backup was more than 2 days ago."
+
+        - alert: ClickHouseBackupAPIDown
+          expr: up{job="clickhouse-backup"} == 0
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "ClickHouse Backup API is down"
+            description: "The backup API has been unavailable for 10 minutes."

@@ -1,0 +1,13 @@
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: zookeeper-pdb
+  namespace: clickhouse
+  labels:
+    app: zookeeper
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: zookeeper

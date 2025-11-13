@@ -1,0 +1,75 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: clickhouse-backup-api
+  namespace: clickhouse
+  labels:
+    app: clickhouse-backup-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: clickhouse-backup-api
+  template:
+    metadata:
+      labels:
+        app: clickhouse-backup-api
+    spec:
+      serviceAccountName: clickhouse-backup-sa
+
+      containers:
+        - name: backup-api
+          image: altinity/clickhouse-backup:2.4.34
+          command: ["clickhouse-backup"]
+          args: ["server"]
+
+          ports:
+            - name: api
+              containerPort: 7171
+
+          env:
+            - name: LOG_LEVEL
+              value: "info"
+            - name: CLICKHOUSE_HOST
+              value: "clickhouse-cluster"
+            - name: CLICKHOUSE_PORT
+              value: "9000"
+
+          volumeMounts:
+            - name: backup-config
+              mountPath: /etc/clickhouse-backup
+            - name: backup-scripts
+              mountPath: /scripts
+
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 7171
+            initialDelaySeconds: 30
+            periodSeconds: 10
+
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 7171
+            initialDelaySeconds: 10
+            periodSeconds: 5
+
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+
+      volumes:
+        - name: backup-config
+          configMap:
+            name: clickhouse-backup-config
+
+        - name: backup-scripts
+          configMap:
+            name: clickhouse-backup-scripts
+            defaultMode: 0755
