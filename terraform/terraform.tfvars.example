@@ -1,0 +1,58 @@
+# GCP Project Configuration
+project_id = "your-gcp-project-id"
+region     = "us-central1"
+zones      = ["us-central1-a", "us-central1-b", "us-central1-c"]
+
+# GKE Cluster Configuration
+cluster_name = "clickhouse-cluster"
+
+# Network Configuration
+network_name     = "clickhouse-network"
+subnet_name      = "clickhouse-subnet"
+subnet_cidr      = "10.0.0.0/24"
+pods_cidr        = "10.1.0.0/16"
+services_cidr    = "10.2.0.0/16"
+master_ipv4_cidr = "172.16.0.0/28"
+
+# Node Pool Configuration
+node_pool_machine_type = "n2-standard-8"
+node_pool_disk_size_gb = 100
+node_pool_disk_type    = "pd-ssd"
+node_pool_min_count    = 1
+node_pool_max_count    = 10
+
+# ClickHouse Configuration
+clickhouse_namespace    = "clickhouse"
+clickhouse_replicas     = 3
+clickhouse_shards       = 2
+clickhouse_version      = "23.8"
+clickhouse_cpu          = "2"
+clickhouse_memory       = "8Gi"
+clickhouse_storage_size = "100Gi"
+clickhouse_storage_class = "pd-ssd"
+
+# Backup Configuration
+backup_enabled         = true
+backup_schedule        = "0 2 * * *"  # Daily at 2 AM UTC
+backup_retention_days  = 30
+backup_bucket_name     = ""  # Leave empty to auto-generate
+
+# Monitoring Configuration
+monitoring_enabled = true
+
+# Security Configuration
+enable_workload_identity    = true
+enable_network_policy       = true
+enable_pod_security_policy  = true
+enable_binary_authorization = false
+
+# Maintenance Configuration
+maintenance_window_start    = "03:00"
+maintenance_window_duration = "4h"
+
+# Labels
+labels = {
+  managed-by  = "terraform"
+  app         = "clickhouse"
+  environment = "production"
+}
