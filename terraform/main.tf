@@ -3,7 +3,7 @@ resource "random_id" "suffix" {
   byte_length = 4
 }
 
-# GKE Cluster Module
+# GKE Cluster Module - Infrastructure only
 module "gke" {
   source = "./modules/gke"
 
@@ -31,48 +31,85 @@ module "gke" {
   labels                       = var.labels
 }
 
-# ClickHouse Module
-module "clickhouse" {
-  source = "./modules/clickhouse"
+# GCS Bucket for ClickHouse Backups
+resource "google_storage_bucket" "clickhouse_backups" {
+  count    = var.backup_enabled ? 1 : 0
+  name     = var.backup_bucket_name != "" ? var.backup_bucket_name : "${var.project_id}-clickhouse-backups-${random_id.suffix.hex}"
+  location = var.region
+  project  = var.project_id
 
-  depends_on = [module.gke]
+  uniform_bucket_level_access = true
 
-  project_id           = var.project_id
-  cluster_name         = var.cluster_name
-  namespace            = var.clickhouse_namespace
-  replicas             = var.clickhouse_replicas
-  shards               = var.clickhouse_shards
-  version              = var.clickhouse_version
-  cpu                  = var.clickhouse_cpu
-  memory               = var.clickhouse_memory
-  storage_size         = var.clickhouse_storage_size
-  storage_class        = var.clickhouse_storage_class
-  enable_workload_identity = var.enable_workload_identity
-  labels               = var.labels
+  versioning {
+    enabled = true
+  }
+
+  lifecycle_rule {
+    condition {
+      age = var.backup_retention_days
+    }
+    action {
+      type = "Delete"
+    }
+  }
+
+  lifecycle_rule {
+    condition {
+      num_newer_versions = 3
+    }
+    action {
+      type = "Delete"
+    }
+  }
+
+  labels = var.labels
 }
 
-# Backup Module
-module "backup" {
-  source = "./modules/backup"
-
-  depends_on = [module.clickhouse]
-
-  project_id            = var.project_id
-  region                = var.region
-  enabled               = var.backup_enabled
-  namespace             = var.clickhouse_namespace
-  schedule              = var.backup_schedule
-  retention_days        = var.backup_retention_days
-  bucket_name           = var.backup_bucket_name != "" ? var.backup_bucket_name : "${var.project_id}-clickhouse-backups-${random_id.suffix.hex}"
-  enable_workload_identity = var.enable_workload_identity
-  labels                = var.labels
+# Service Account for ClickHouse with Workload Identity
+resource "google_service_account" "clickhouse" {
+  count        = var.enable_workload_identity ? 1 : 0
+  account_id   = "${var.cluster_name}-clickhouse-sa"
+  display_name = "ClickHouse Workload Identity Service Account"
+  project      = var.project_id
 }
 
-# Monitoring Module
+# Service Account for Backup with Workload Identity
+resource "google_service_account" "clickhouse_backup" {
+  count        = var.enable_workload_identity && var.backup_enabled ? 1 : 0
+  account_id   = "${var.cluster_name}-backup-sa"
+  display_name = "ClickHouse Backup Service Account"
+  project      = var.project_id
+}
+
+# Grant backup service account access to GCS bucket
+resource "google_storage_bucket_iam_member" "backup_writer" {
+  count  = var.enable_workload_identity && var.backup_enabled ? 1 : 0
+  bucket = google_storage_bucket.clickhouse_backups[0].name
+  role   = "roles/storage.objectAdmin"
+  member = "serviceAccount:${google_service_account.clickhouse_backup[0].email}"
+}
+
+# Workload Identity binding for ClickHouse
+resource "google_service_account_iam_member" "clickhouse_workload_identity" {
+  count              = var.enable_workload_identity ? 1 : 0
+  service_account_id = google_service_account.clickhouse[0].name
+  role               = "roles/iam.workloadIdentityUser"
+  member             = "serviceAccount:${var.project_id}.svc.id.goog[${var.clickhouse_namespace}/clickhouse-sa]"
+}
+
+# Workload Identity binding for Backup
+resource "google_service_account_iam_member" "backup_workload_identity" {
+  count              = var.enable_workload_identity && var.backup_enabled ? 1 : 0
+  service_account_id = google_service_account.clickhouse_backup[0].name
+  role               = "roles/iam.workloadIdentityUser"
+  member             = "serviceAccount:${var.project_id}.svc.id.goog[${var.clickhouse_namespace}/clickhouse-backup-sa]"
+}
+
+# Monitoring Module (Prometheus Operator)
 module "monitoring" {
   source = "./modules/monitoring"
 
-  depends_on = [module.clickhouse]
+  depends_on = [module.gke]
 
   enabled               = var.monitoring_enabled
   clickhouse_namespace  = var.clickhouse_namespace

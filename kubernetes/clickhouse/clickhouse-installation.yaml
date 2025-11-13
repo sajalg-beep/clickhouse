@@ -63,8 +63,55 @@ spec:
         spec:
           serviceAccountName: clickhouse-sa
 
+          # Topology Spread Constraints for balanced distribution across zones and racks
+          topologySpreadConstraints:
+            # Spread across availability zones
+            - maxSkew: 1
+              topologyKey: topology.kubernetes.io/zone
+              whenUnsatisfiable: DoNotSchedule
+              labelSelector:
+                matchLabels:
+                  clickhouse.altinity.com/app: chop
+              matchLabelKeys:
+                - clickhouse.altinity.com/chi
+
+            # Spread across racks (custom label)
+            - maxSkew: 1
+              topologyKey: topology.clickhouse.com/rack
+              whenUnsatisfiable: ScheduleAnyway
+              labelSelector:
+                matchLabels:
+                  clickhouse.altinity.com/app: chop
+              matchLabelKeys:
+                - clickhouse.altinity.com/chi
+
+            # Spread across nodes within same zone
+            - maxSkew: 1
+              topologyKey: kubernetes.io/hostname
+              whenUnsatisfiable: ScheduleAnyway
+              labelSelector:
+                matchLabels:
+                  clickhouse.altinity.com/app: chop
+              matchLabelKeys:
+                - clickhouse.altinity.com/ShardName
+
           affinity:
+            # Pod Anti-Affinity: Prefer not to schedule replicas on the same node
             podAntiAffinity:
+              # REQUIRED: Never schedule two replicas of the same shard on the same node
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - labelSelector:
+                    matchExpressions:
+                      - key: clickhouse.altinity.com/app
+                        operator: In
+                        values:
+                          - chop
+                      - key: clickhouse.altinity.com/ShardName
+                        operator: Exists
+                  topologyKey: kubernetes.io/hostname
+                  namespaceSelector: {}
+
+              # PREFERRED: Spread replicas across zones
               preferredDuringSchedulingIgnoredDuringExecution:
                 - weight: 100
                   podAffinityTerm:
@@ -74,7 +121,38 @@ spec:
                           operator: In
                           values:
                             - chop
-                    topologyKey: kubernetes.io/hostname
+                    topologyKey: topology.kubernetes.io/zone
+                    namespaceSelector: {}
+
+                # PREFERRED: Spread replicas across racks
+                - weight: 50
+                  podAffinityTerm:
+                    labelSelector:
+                      matchExpressions:
+                        - key: clickhouse.altinity.com/app
+                          operator: In
+                          values:
+                            - chop
+                    topologyKey: topology.clickhouse.com/rack
+                    namespaceSelector: {}
+
+            # Node Affinity: Prefer nodes labeled for ClickHouse workload
+            nodeAffinity:
+              preferredDuringSchedulingIgnoredDuringExecution:
+                - weight: 100
+                  preference:
+                    matchExpressions:
+                      - key: workload
+                        operator: In
+                        values:
+                          - clickhouse
+                      - key: node.kubernetes.io/instance-type
+                        operator: In
+                        values:
+                          - n2-standard-8
+                          - n2-standard-16
+                          - n2-highmem-8
+                          - n2-highmem-16
 
           containers:
             - name: clickhouse

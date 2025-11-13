@@ -1,0 +1,28 @@
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: clickhouse-pdb
+  namespace: clickhouse
+  labels:
+    app: clickhouse
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      clickhouse.altinity.com/app: chop
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: clickhouse-shard-pdb
+  namespace: clickhouse
+  labels:
+    app: clickhouse
+spec:
+  # For each shard, allow only 1 replica to be unavailable
+  # This ensures at least 2 replicas are always available per shard
+  minAvailable: 2
+  selector:
+    matchLabels:
+      clickhouse.altinity.com/app: chop

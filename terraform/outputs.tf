@@ -21,28 +21,28 @@ output "region" {
 }
 
 output "clickhouse_namespace" {
-  description = "ClickHouse namespace"
+  description = "ClickHouse namespace (for K8s deployment)"
   value       = var.clickhouse_namespace
-}
-
-output "clickhouse_service" {
-  description = "ClickHouse service name"
-  value       = module.clickhouse.service_name
-}
-
-output "clickhouse_connection_string" {
-  description = "ClickHouse connection instructions"
-  value       = module.clickhouse.connection_info
 }
 
 output "backup_bucket" {
   description = "GCS bucket for backups"
-  value       = var.backup_enabled ? module.backup.bucket_name : "N/A"
+  value       = var.backup_enabled ? google_storage_bucket.clickhouse_backups[0].name : "N/A"
+}
+
+output "clickhouse_service_account" {
+  description = "GCP Service Account for ClickHouse (Workload Identity)"
+  value       = var.enable_workload_identity ? google_service_account.clickhouse[0].email : "N/A"
+}
+
+output "backup_service_account" {
+  description = "GCP Service Account for Backup (Workload Identity)"
+  value       = var.enable_workload_identity && var.backup_enabled ? google_service_account.clickhouse_backup[0].email : "N/A"
 }
 
 output "grafana_url" {
   description = "Grafana dashboard URL (port-forward required)"
-  value       = var.monitoring_enabled ? "kubectl port-forward -n monitoring svc/grafana 3000:80" : "N/A"
+  value       = var.monitoring_enabled ? "kubectl port-forward -n monitoring svc/prometheus-grafana 3000:80" : "N/A"
 }
 
 output "connect_to_cluster" {
@@ -50,7 +50,15 @@ output "connect_to_cluster" {
   value       = "gcloud container clusters get-credentials ${module.gke.cluster_name} --region ${var.region} --project ${var.project_id}"
 }
 
-output "clickhouse_operator_info" {
-  description = "ClickHouse Operator information"
-  value       = module.clickhouse.operator_info
+output "deploy_clickhouse" {
+  description = "Command to deploy ClickHouse using K8s YAML"
+  value       = "kubectl apply -k ../kubernetes/"
+}
+
+output "workload_identity_annotations" {
+  description = "Annotations to add to Kubernetes ServiceAccounts"
+  value = var.enable_workload_identity ? {
+    clickhouse_sa = "iam.gke.io/gcp-service-account: ${google_service_account.clickhouse[0].email}"
+    backup_sa     = var.backup_enabled ? "iam.gke.io/gcp-service-account: ${google_service_account.clickhouse_backup[0].email}" : "N/A"
+  } : {}
 }

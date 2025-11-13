@@ -8,6 +8,7 @@ resources:
   - configmap.yaml
   - clickhouse-installation.yaml
   - service-lb.yaml
+  - poddisruptionbudget.yaml
 
 commonLabels:
   app.kubernetes.io/name: clickhouse

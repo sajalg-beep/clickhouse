@@ -6,22 +6,53 @@ This repository contains complete infrastructure code to deploy a production-rea
 
 Choose your preferred deployment method:
 
-1. **[Terraform](terraform/)** - Infrastructure as Code with automated GKE cluster provisioning
-2. **[Kubernetes YAML](kubernetes/)** - Direct Kubernetes manifest deployment (requires existing GKE cluster)
+### 🌟 Recommended: Hybrid Approach
+**[Terraform + Kubernetes YAML](HYBRID_DEPLOYMENT.md)** - Best of both worlds
+- ✅ Terraform manages GKE infrastructure, networking, and GCP resources
+- ✅ Kubernetes YAML deploys ClickHouse with advanced scheduling features
+- ✅ Fine-grained control over pod placement, topology, and rack awareness
+- ✅ PodDisruptionBudgets for high availability
+- ✅ Easy to customize and iterate
 
-Both methods deploy the same enterprise-grade ClickHouse cluster with identical features.
+### Alternative Approaches
+
+1. **[Terraform Only](terraform/)** - Full infrastructure automation (GKE + all components)
+   - Manages everything including ClickHouse deployment via Helm
+   - Good for: Fully automated deployments
+
+2. **[Kubernetes YAML Only](kubernetes/DEPLOYMENT.md)** - Direct manifest deployment
+   - Requires existing GKE cluster
+   - Good for: When you manage GKE separately
 
 ## Features
 
-- **High Availability**: Multi-zone GKE cluster with multiple ClickHouse replicas per shard
+### High Availability
+- **Multi-Zone Deployment**: Replicas distributed across GCP availability zones
+- **Topology Spread Constraints**: Automatic pod distribution across zones, racks, and nodes
+- **Rack Awareness**: Custom node labeling for physical rack distribution
+- **Pod Disruption Budgets**: Ensures minimum availability during maintenance (minAvailable: 2)
+- **Pod Anti-Affinity**: Hard requirement - no replicas of same shard on same node
+
+### Data Management
 - **Replication**: Built-in data replication across replicas using ZooKeeper
 - **Sharding**: Horizontal scaling with configurable number of shards
-- **Automated Backups**: Scheduled backups to Google Cloud Storage with configurable retention
-- **Monitoring**: Prometheus and Grafana for metrics and alerting
-- **Security**: Workload Identity, Network Policies, Private GKE cluster
+- **Automated Backups**: Scheduled backups to Google Cloud Storage (daily at 2 AM UTC)
+- **Point-in-Time Recovery**: Restore from any backup with configurable retention (default: 30 days)
+- **Backup API**: REST API for manual backup and restore operations
+
+### Operations
 - **Zero-Downtime Maintenance**: Rolling updates for version upgrades and configuration changes
-- **Auto-scaling**: Node auto-scaling based on workload
-- **Disaster Recovery**: Point-in-time recovery from GCS backups
+- **Auto-scaling**: Node auto-scaling based on workload (1-10 nodes per zone)
+- **Monitoring**: Prometheus and Grafana with pre-configured ClickHouse dashboards
+- **Alerting**: 10+ alert rules for critical metrics (downtime, query performance, replication lag)
+- **GitOps Ready**: Kustomize support for environment-specific configurations
+
+### Security
+- **Workload Identity**: Secure GCP access without service account keys
+- **Network Policies**: Restrict pod-to-pod communication
+- **Private GKE Cluster**: Nodes have no external IPs
+- **Shielded Nodes**: Secure boot and integrity monitoring enabled
+- **RBAC**: Kubernetes role-based access control
 
 ## Architecture
 
@@ -65,14 +96,9 @@ Both methods deploy the same enterprise-grade ClickHouse cluster with identical 
 
 ## Quick Start
 
-### Option 1: Deploy with Terraform (Full Infrastructure)
+### 🌟 Recommended: Hybrid Deployment
 
-**Prerequisites:**
-- Google Cloud SDK
-- Terraform >= 1.5.0
-- kubectl
-
-**Steps:**
+**Phase 1: Infrastructure (Terraform)**
 
 ```bash
 # 1. Configure Terraform
@@ -80,48 +106,67 @@ cd terraform
 cp terraform.tfvars.example terraform.tfvars
 # Edit terraform.tfvars with your project_id
 
-# 2. Deploy
+# 2. Deploy GKE infrastructure
 terraform init
 terraform apply
 
-# 3. Connect to cluster
-gcloud container clusters get-credentials clickhouse-cluster \
-  --region us-central1 --project YOUR_PROJECT_ID
-
-# 4. Verify
-kubectl get pods -n clickhouse
+# 3. Get credentials
+eval $(terraform output -raw connect_to_cluster)
 ```
 
-**Deployment time:** ~15-20 minutes
-
-📖 **[Full Terraform Documentation](terraform/)**
-
-### Option 2: Deploy with Kubernetes YAML (Existing GKE Cluster)
-
-**Prerequisites:**
-- Existing GKE cluster
-- kubectl configured
-- ClickHouse Operator installed
-
-**Steps:**
+**Phase 2: ClickHouse (Kubernetes YAML)**
 
 ```bash
 # 1. Install ClickHouse Operator
 kubectl apply -f https://raw.githubusercontent.com/Altinity/clickhouse-operator/master/deploy/operator/clickhouse-operator-install-bundle.yaml
 
-# 2. Configure backup bucket (edit kubernetes/backup/configmap.yaml)
-# Set: gcs.bucket = "your-backup-bucket-name"
+# 2. Label nodes for rack awareness
+kubectl get nodes -o name | xargs -I {} kubectl label {} topology.clickhouse.com/rack=rack1 workload=clickhouse
 
-# 3. Deploy everything
+# 3. Update service account annotations (from terraform outputs)
+# Edit kubernetes/clickhouse/service-account.yaml
+# Edit kubernetes/backup/service-account.yaml
+
+# 4. Deploy ClickHouse
 kubectl apply -k kubernetes/
 
-# 4. Verify
-kubectl get pods -n clickhouse
+# 5. Verify deployment
+kubectl get pods -n clickhouse -o wide
 ```
 
-**Deployment time:** ~10 minutes
+**Total deployment time:** ~25 minutes
 
-📖 **[Full Kubernetes YAML Documentation](kubernetes/DEPLOYMENT.md)**
+📖 **[Complete Hybrid Deployment Guide](HYBRID_DEPLOYMENT.md)**
+
+### Alternative Methods
+
+<details>
+<summary>Option 1: Terraform Only (Click to expand)</summary>
+
+**Note:** Uses Helm for ClickHouse deployment, less control over pod placement.
+
+```bash
+cd terraform
+cp terraform.tfvars.example terraform.tfvars
+terraform init
+terraform apply
+```
+
+📖 [Terraform Documentation](terraform/)
+</details>
+
+<details>
+<summary>Option 2: Kubernetes YAML Only (Click to expand)</summary>
+
+**Note:** Requires existing GKE cluster.
+
+```bash
+# Requires: GKE cluster, ClickHouse Operator
+kubectl apply -k kubernetes/
+```
+
+📖 [Kubernetes YAML Documentation](kubernetes/DEPLOYMENT.md)
+</details>
 
 ## Prerequisites by Deployment Method
 
